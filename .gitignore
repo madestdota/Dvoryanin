@@ -1,0 +1,9 @@
+# Сохранения игры
+save/
+# Экспортированные сборки
+Output/
+Deploy/
+# Системный мусор
+Thumbs.db
+desktop.ini
+.DS_Store
