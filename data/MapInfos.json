@@ -1,5 +1,7 @@
 [
 null,
 {"id":1,"expanded":false,"name":"MAP001","order":1,"parentId":0,"scrollX":411.5,"scrollY":334},
-{"id":2,"expanded":false,"name":"Испытание боя","order":2,"parentId":0,"scrollX":0,"scrollY":0}
+{"id":2,"expanded":false,"name":"Испытание боя","order":2,"parentId":0,"scrollX":0,"scrollY":0},
+{"id":3,"expanded":false,"name":"Пролог: договор","order":3,"parentId":0,"scrollX":0,"scrollY":0},
+{"id":4,"expanded":false,"name":"Пролог: усадьба","order":4,"parentId":0,"scrollX":0,"scrollY":0}
 ]
