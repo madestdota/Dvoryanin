@@ -3,18 +3,18 @@
 //=============================================================================
 
 /*:
- * @plugindesc v1.0 Блок и парирование по таймингу, когда враг бьёт героя.
+ * @plugindesc v2.0 Защита по таймингу от ударов врага: одиночные удары и серии в ритм.
  * @author Dvoryanin
  *
- * @param parryWindow
- * @text Окно парирования (кадры)
- * @desc Насколько точно нужно попасть в момент удара: ± столько кадров. 60 кадров = 1 секунда.
+ * @param perfectWindow
+ * @text Окно идеальной защиты (кадры)
+ * @desc Насколько точно нужно попасть в удар: ± столько кадров. 60 кадров = 1 секунда.
  * @type number
  * @default 6
  *
- * @param blockWindow
+ * @param goodWindow
  * @text Окно блока (кадры)
- * @desc За сколько кадров до удара нажатие ещё засчитывается как блок.
+ * @desc За сколько кадров до удара нажатие ещё считается блоком.
  * @type number
  * @default 16
  *
@@ -24,35 +24,29 @@
  * @type number
  * @default 6
  *
- * @param blockRate
+ * @param perfectRate
+ * @text Урон при идеальной защите, %
+ * @type number
+ * @default 50
+ *
+ * @param goodRate
  * @text Урон при блоке, %
- * @desc Какая часть урона проходит при блоке.
  * @type number
- * @default 50
+ * @default 80
  *
- * @param parryCost
- * @text Цена парирования (выносливость)
- * @desc Сколько TP (выносливости) тратит парирование. Если не хватает, получится только блок.
+ * @param approach
+ * @text Время сужения кольца (кадры)
+ * @desc За сколько кадров до удара появляется его кольцо в серии.
  * @type number
- * @default 20
- *
- * @param startTp
- * @text Выносливость в начале боя
- * @type number
- * @default 50
- *
- * @param tpRegen
- * @text Восстановление выносливости за ход
- * @type number
- * @default 10
+ * @default 45
  *
  * @param rhythmMin
- * @text Замах по умолчанию: от (кадры)
+ * @text Замах одиночного удара: от (кадры)
  * @type number
  * @default 45
  *
  * @param rhythmMax
- * @text Замах по умолчанию: до (кадры)
+ * @text Замах одиночного удара: до (кадры)
  * @type number
  * @default 75
  *
@@ -64,27 +58,33 @@
  * @default Sword1
  *
  * @help
- * Когда враг атакует героя, перед ударом появляется сужающееся кольцо.
- * Нажмите OK (Z, Enter, Пробел или касание), когда кольцо сойдётся с
- * внутренним кругом:
- *   - точно в момент удара — ПАРИРОВАНИЕ: урона нет, герой контратакует
- *     обычной атакой. Стоит выносливость (TP);
- *   - чуть раньше — БЛОК: проходит только часть урона;
- *   - слишком рано или поздно — полный урон. Засчитывается только
- *     первое нажатие, поэтому долбить кнопку бесполезно.
+ * Когда враг бьёт героя, к центру экрана сужается кольцо. Нажмите OK
+ * (Z, Enter, Пробел или касание), когда кольцо сойдётся с кругом:
+ *   - точно в момент удара — ИДЕАЛЬНО: проходит 50% урона;
+ *   - чуть раньше — БЛОК: проходит 80% урона;
+ *   - не успели или нажали слишком рано — полный урон.
+ * Засчитывается одно нажатие на удар, долбить кнопку бесполезно.
+ *
+ * Если все удары атаки отражены идеально, герой контратакует.
+ *
+ * СЕРИИ. Навык врага может бить несколько раз подряд в своём ритме.
+ * Поставьте навыку «Повторы» = числу ударов и заметку:
+ *     <Серия: 50, 20, 30>
+ * Первое число — через сколько кадров после начала прилетит первый удар,
+ * следующие — промежутки между ударами. Каждому удару своё кольцо,
+ * нажимать нужно в ритм.
  *
  * Заметки (поле «Заметка»):
- *
  *   Враг:
- *     <Ритм: 30-60>       длина замаха в кадрах, случайно в этих пределах
- *     <Сигнал: Growl>     звук начала замаха (файл из audio/se)
- *
+ *     <Ритм: 30-60>       замах одиночного удара в кадрах (случайно)
+ *     <Сигнал: Growl>     звук начала атаки (файл из audio/se)
  *   Навык:
- *     <Неотразимо>        удар можно только заблокировать, кольцо красное
+ *     <Серия: 40, 25, 25> ритм серии (см. выше)
+ *     <Неотразимо>        только блок, без идеальной защиты; кольцо красное
  *     <БезЗамаха>         удар проходит сразу, без кольца
  *
- * Работает для навыков врага с уроном по HP (тип «Урон HP» или
- * «Поглощение HP»), если цель — живой герой, который может двигаться.
+ * Работает для навыков врага с уроном по HP, если цель — живой герой,
+ * который может двигаться.
  */
 
 (function() {
@@ -97,16 +97,21 @@
     };
 
     var CFG = {
-        parryWindow: num('parryWindow', 6),
-        blockWindow: num('blockWindow', 16),
+        perfectWindow: num('perfectWindow', 6),
+        goodWindow: num('goodWindow', 16),
         lateWindow: num('lateWindow', 6),
-        blockRate: num('blockRate', 50) / 100,
-        parryCost: num('parryCost', 20),
-        startTp: num('startTp', 50),
-        tpRegen: num('tpRegen', 10),
+        perfectRate: num('perfectRate', 50) / 100,
+        goodRate: num('goodRate', 80) / 100,
+        approach: num('approach', 45),
         rhythmMin: num('rhythmMin', 45),
         rhythmMax: num('rhythmMax', 75),
         cueSe: String(params['cueSe'] || 'Sword1')
+    };
+
+    var GRADES = {
+        perfect: { text: 'Идеально!', color: '#ffe680', rate: CFG.perfectRate, se: ['Parry', 100] },
+        good: { text: 'Блок', color: '#a0c8ff', rate: CFG.goodRate, se: ['Parry', 70] },
+        miss: { text: 'Мимо', color: '#ff8a80', rate: 1, se: null }
     };
 
     var meta = function(object, key) {
@@ -129,9 +134,15 @@
     var _BattleManager_initMembers = BattleManager.initMembers;
     BattleManager.initMembers = function() {
         _BattleManager_initMembers.call(this);
-        this._dvWindup = null;
-        this._dvGrade = null;
+        this.dvClear();
         this._dvFlash = null;
+    };
+
+    BattleManager.dvClear = function() {
+        this._dvSeries = null;
+        this._dvGrades = [];
+        this._dvGradeTarget = null;
+        this._dvCounter = false;
     };
 
     BattleManager.dvNeedsWindup = function(target) {
@@ -143,17 +154,28 @@
         if (!target || !target.isActor() || !target.isAlive() || !target.canMove()) {
             return false;
         }
-        if (!action.isDamage() || meta(action.item(), 'БезЗамаха')) {
-            return false;
-        }
-        return true;
+        return action.isDamage() && !meta(action.item(), 'БезЗамаха');
     };
 
-    BattleManager.dvStartWindup = function(target) {
-        var enemy = this._subject.enemy();
+    BattleManager.dvHitTimes = function() {
+        var series = meta(this._action.item(), 'Серия');
+        if (series && series !== true) {
+            var times = [];
+            var at = 0;
+            series.split(',').forEach(function(part) {
+                var gap = Number(part);
+                if (!isNaN(gap) && gap > 0) {
+                    at += gap;
+                    times.push(at);
+                }
+            });
+            if (times.length > 0) {
+                return times;
+            }
+        }
         var min = CFG.rhythmMin;
         var max = CFG.rhythmMax;
-        var rhythm = meta(enemy, 'Ритм');
+        var rhythm = meta(this._subject.enemy(), 'Ритм');
         if (rhythm && rhythm !== true) {
             var parts = rhythm.split('-').map(Number);
             if (!isNaN(parts[0])) {
@@ -161,64 +183,73 @@
                 max = isNaN(parts[1]) ? parts[0] : parts[1];
             }
         }
-        this._dvWindup = {
+        return [min + Math.randomInt(Math.max(max - min, 0) + 1)];
+    };
+
+    BattleManager.dvStartSeries = function(target) {
+        var hits = this.dvHitTimes().map(function(at) {
+            return { at: at, grade: null };
+        });
+        this._dvSeries = {
             target: target,
             frame: 0,
-            hit: min + Math.randomInt(Math.max(max - min, 0) + 1),
-            press: null,
+            hits: hits,
             unparryable: !!meta(this._action.item(), 'Неотразимо')
         };
-        var cue = meta(enemy, 'Сигнал');
+        var cue = meta(this._subject.enemy(), 'Сигнал');
         playSe(cue && cue !== true ? cue : CFG.cueSe);
     };
 
-    BattleManager.dvUpdateWindup = function() {
-        var w = this._dvWindup;
-        w.frame++;
-        if (w.press === null && (Input.isTriggered('ok') || TouchInput.isTriggered())) {
-            w.press = w.frame;
+    BattleManager.dvGradeHit = function(hit, grade) {
+        var s = this._dvSeries;
+        if (grade === 'perfect' && s.unparryable) {
+            grade = 'good';
         }
-        var pressedInTime = w.press !== null && w.frame >= w.hit;
-        if (pressedInTime || w.frame >= w.hit + CFG.lateWindow) {
-            this.dvResolveWindup();
+        hit.grade = grade;
+        var info = GRADES[grade];
+        if (info.se) {
+            playSe(info.se[0], info.se[1]);
         }
+        this._dvFlash = { text: info.text, color: info.color, time: 30 };
     };
 
-    BattleManager.dvResolveWindup = function() {
-        var w = this._dvWindup;
-        var grade = 'none';
-        if (w.press !== null) {
-            var delta = w.press - w.hit;
-            if (Math.abs(delta) <= CFG.parryWindow) {
-                grade = 'parry';
-            } else if (delta >= -CFG.blockWindow && delta <= CFG.lateWindow) {
-                grade = 'block';
+    BattleManager.dvUpdateSeries = function() {
+        var s = this._dvSeries;
+        s.frame++;
+        var pending = s.hits.filter(function(hit) { return hit.grade === null; });
+        if (pending.length > 0 && (Input.isTriggered('ok') || TouchInput.isTriggered())) {
+            var hit = pending[0];
+            var delta = s.frame - hit.at;
+            if (delta < -CFG.goodWindow) {
+                this.dvGradeHit(hit, 'miss');
+            } else if (Math.abs(delta) <= CFG.perfectWindow) {
+                this.dvGradeHit(hit, 'perfect');
+            } else {
+                this.dvGradeHit(hit, 'good');
             }
         }
-        if (grade === 'parry' && (w.unparryable || w.target.tp < CFG.parryCost)) {
-            grade = 'block';
+        s.hits.forEach(function(hit) {
+            if (hit.grade === null && s.frame > hit.at + CFG.lateWindow) {
+                this.dvGradeHit(hit, 'miss');
+            }
+        }, this);
+        if (s.hits.every(function(hit) { return hit.grade !== null; })) {
+            this._dvGrades = s.hits.map(function(hit) { return hit.grade; });
+            this._dvGradeTarget = s.target;
+            this._dvCounter = !s.unparryable && this._dvGrades.every(function(g) { return g === 'perfect'; });
+            this._dvSeries = null;
         }
-        if (grade === 'parry') {
-            w.target.gainSilentTp(-CFG.parryCost);
-            playSe('Parry', 100);
-            this._dvFlash = { text: 'ПАРИРОВАНО!', color: '#ffe680', time: 45 };
-        } else if (grade === 'block') {
-            playSe('Parry', 70);
-            this._dvFlash = { text: 'Блок', color: '#a0c8ff', time: 35 };
-        }
-        this._dvWindup = null;
-        this._dvGrade = grade;
     };
 
     var _BattleManager_updateAction = BattleManager.updateAction;
     BattleManager.updateAction = function() {
-        if (this._dvWindup) {
-            this.dvUpdateWindup();
-            if (this._dvWindup) {
+        if (this._dvSeries) {
+            this.dvUpdateSeries();
+            if (this._dvSeries) {
                 return;
             }
-        } else if (this._dvGrade === null && this.dvNeedsWindup(this._targets[0])) {
-            this.dvStartWindup(this._targets[0]);
+        } else if (this._dvGrades.length === 0 && this.dvNeedsWindup(this._targets[0])) {
+            this.dvStartSeries(this._targets[0]);
             return;
         }
         _BattleManager_updateAction.call(this);
@@ -226,23 +257,31 @@
 
     var _BattleManager_invokeAction = BattleManager.invokeAction;
     BattleManager.invokeAction = function(subject, target) {
-        var grade = this._dvGrade;
-        this._dvGrade = null;
-        if (grade === 'parry') {
-            this.dvInvokeParry(subject, target);
-            return;
+        if (this._dvGrades.length > 0 && this._dvGradeTarget !== target) {
+            this.dvClear();
         }
-        if (grade === 'block') {
-            target._dvBlocking = true;
-            this._logWindow.push('addText', target.name() + ' блокирует удар!');
+        var grade = this._dvGrades.shift();
+        if (grade) {
+            target._dvRate = GRADES[grade].rate;
+            if (grade === 'good') {
+                this._logWindow.push('addText', target.name() + ' блокирует удар.');
+            } else if (grade === 'perfect') {
+                this._logWindow.push('addText', target.name() + ' идеально отражает удар!');
+            }
         }
         _BattleManager_invokeAction.call(this, subject, target);
-        target._dvBlocking = false;
+        target._dvRate = undefined;
+        if (grade && this._dvGrades.length === 0 && this._dvCounter) {
+            this._dvCounter = false;
+            if (target.isAlive() && subject.isAlive()) {
+                this.dvInvokeCounter(subject, target);
+            }
+        }
     };
 
-    BattleManager.dvInvokeParry = function(subject, target) {
+    BattleManager.dvInvokeCounter = function(subject, target) {
         this._logWindow.push('pushBaseLine');
-        this._logWindow.push('addText', target.name() + ' парирует удар и контратакует!');
+        this._logWindow.push('addText', target.name() + ' контратакует!');
         var counter = new Game_Action(target);
         counter.setAttack();
         counter.apply(subject);
@@ -251,34 +290,27 @@
         this.refreshStatus();
     };
 
+    var _BattleManager_endAction = BattleManager.endAction;
+    BattleManager.endAction = function() {
+        this.dvClear();
+        _BattleManager_endAction.call(this);
+    };
+
     //-------------------------------------------------------------------------
-    // Game_Action: урон при блоке
+    // Game_Action: урон с учётом защиты
     //-------------------------------------------------------------------------
 
     var _Game_Action_makeDamageValue = Game_Action.prototype.makeDamageValue;
     Game_Action.prototype.makeDamageValue = function(target, critical) {
         var value = _Game_Action_makeDamageValue.call(this, target, critical);
-        if (target._dvBlocking && value > 0) {
-            value = Math.floor(value * CFG.blockRate);
+        if (target._dvRate !== undefined && value > 0) {
+            value = Math.max(1, Math.floor(value * target._dvRate));
         }
         return value;
     };
 
     //-------------------------------------------------------------------------
-    // Game_Actor: выносливость (TP)
-    //-------------------------------------------------------------------------
-
-    Game_Actor.prototype.initTp = function() {
-        this.setTp(CFG.startTp);
-    };
-
-    Game_Actor.prototype.regenerateTp = function() {
-        Game_Battler.prototype.regenerateTp.call(this);
-        this.gainSilentTp(CFG.tpRegen);
-    };
-
-    //-------------------------------------------------------------------------
-    // Sprite_DvParryCue: кольцо замаха и надпись результата
+    // Sprite_DvParryCue: кольца ударов, счётчик серии и надпись
     //-------------------------------------------------------------------------
 
     function Sprite_DvParryCue() {
@@ -291,6 +323,7 @@
     Sprite_DvParryCue.SIZE = 360;
     Sprite_DvParryCue.INNER = 36;
     Sprite_DvParryCue.OUTER = 170;
+    Sprite_DvParryCue.PIP_COLORS = { perfect: '#ffe680', good: '#a0c8ff', miss: '#ff8a80' };
 
     Sprite_DvParryCue.prototype.initialize = function() {
         Sprite.prototype.initialize.call(this);
@@ -305,18 +338,18 @@
         this._label.y = Sprite_DvParryCue.SIZE / 2 - 4;
         this.addChild(this._label);
         this._wasActive = false;
-        this._flashText = '';
+        this._labelText = '';
     };
 
     Sprite_DvParryCue.prototype.update = function() {
         Sprite.prototype.update.call(this);
-        this.updateRing();
+        this.updateRings();
         this.updateLabel();
     };
 
-    Sprite_DvParryCue.prototype.updateRing = function() {
-        var w = BattleManager._dvWindup;
-        if (!w) {
+    Sprite_DvParryCue.prototype.updateRings = function() {
+        var s = BattleManager._dvSeries;
+        if (!s) {
             if (this._wasActive) {
                 this.bitmap.clear();
                 this._wasActive = false;
@@ -328,9 +361,8 @@
         var ctx = b._context;
         var c = Sprite_DvParryCue.SIZE / 2;
         var inner = Sprite_DvParryCue.INNER;
-        var rest = Math.max(w.hit - w.frame, 0) / w.hit;
-        var radius = inner + (Sprite_DvParryCue.OUTER - inner) * rest;
-        var color = w.unparryable ? '255,80,80' : '255,255,255';
+        var outer = Sprite_DvParryCue.OUTER;
+        var color = s.unparryable ? '255,80,80' : '255,255,255';
         b.clear();
         ctx.save();
         ctx.lineWidth = 3;
@@ -338,34 +370,65 @@
         ctx.beginPath();
         ctx.arc(c, c, inner, 0, Math.PI * 2, false);
         ctx.stroke();
-        ctx.lineWidth = 7;
-        ctx.strokeStyle = 'rgba(' + color + ',' + (0.35 + 0.65 * (1 - rest)) + ')';
-        ctx.beginPath();
-        ctx.arc(c, c, radius, 0, Math.PI * 2, false);
-        ctx.stroke();
+        s.hits.forEach(function(hit, i) {
+            if (hit.grade !== null) {
+                return;
+            }
+            var lead = i === 0 ? hit.at : CFG.approach;
+            var left = hit.at - s.frame;
+            if (left > lead) {
+                return;
+            }
+            var rest = Math.max(left, 0) / Math.max(lead, 1);
+            ctx.lineWidth = 7;
+            ctx.strokeStyle = 'rgba(' + color + ',' + (0.35 + 0.65 * (1 - rest)) + ')';
+            ctx.beginPath();
+            ctx.arc(c, c, inner + (outer - inner) * rest, 0, Math.PI * 2, false);
+            ctx.stroke();
+        });
+        if (s.hits.length > 1) {
+            var gap = 28;
+            var x0 = c - gap * (s.hits.length - 1) / 2;
+            var y = c + inner + 32;
+            s.hits.forEach(function(hit, i) {
+                ctx.beginPath();
+                ctx.arc(x0 + gap * i, y, 9, 0, Math.PI * 2, false);
+                ctx.fillStyle = hit.grade ? Sprite_DvParryCue.PIP_COLORS[hit.grade] : 'rgba(0,0,0,0.55)';
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+                ctx.stroke();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'rgba(' + color + ',0.9)';
+                ctx.stroke();
+            });
+        }
         ctx.restore();
         b._setDirty();
     };
 
     Sprite_DvParryCue.prototype.updateLabel = function() {
-        var w = BattleManager._dvWindup;
+        var s = BattleManager._dvSeries;
         var flash = BattleManager._dvFlash;
         var text = '';
         var color = '#ffffff';
+        var big = false;
         if (flash && flash.time > 0) {
             text = flash.text;
             color = flash.color;
+            big = true;
             flash.time--;
-            this._label.opacity = Math.min(255, flash.time * 12);
-        } else if (w) {
-            text = w.unparryable ? 'Не парировать — только блок' : 'Z / Пробел — в момент удара';
+            this._label.opacity = Math.min(255, flash.time * 14);
+        } else if (s) {
+            text = s.unparryable ? 'Только блок' : 'Z / Пробел — в момент удара';
             this._label.opacity = 200;
         }
-        if (text !== this._flashText) {
-            this._flashText = text;
+        var key = text + color;
+        if (key !== this._labelText) {
+            this._labelText = key;
             var lb = this._label.bitmap;
             lb.clear();
-            lb.fontSize = flash && flash.time > 0 ? 32 : 20;
+            lb.fontSize = big ? 32 : 20;
             lb.textColor = color;
             lb.drawText(text, 0, 0, lb.width, lb.height, 'center');
         }
