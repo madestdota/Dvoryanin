@@ -82,6 +82,8 @@
  *     <Серия: 40, 25, 25> ритм серии (см. выше)
  *     <Неотразимо>        только блок, без идеальной защиты; кольцо красное
  *     <БезЗамаха>         удар проходит сразу, без кольца
+ *   Черта героя или снаряжение:
+ *     <ОкноИдеальной: 3>  окно идеальной защиты шире на 3 кадра
  *
  * Работает для навыков врага с уроном по HP, если цель — живой герой,
  * который может двигаться.
@@ -200,6 +202,13 @@
         playSe(cue && cue !== true ? cue : CFG.cueSe);
     };
 
+    BattleManager.dvWindowBonus = function(actor) {
+        return actor.traitObjects().reduce(function(sum, object) {
+            var value = Number(meta(object, 'ОкноИдеальной'));
+            return sum + (isNaN(value) ? 0 : value);
+        }, 0);
+    };
+
     BattleManager.dvGradeHit = function(hit, grade) {
         var s = this._dvSeries;
         if (grade === 'perfect' && s.unparryable) {
@@ -222,7 +231,7 @@
             var delta = s.frame - hit.at;
             if (delta < -CFG.goodWindow) {
                 this.dvGradeHit(hit, 'miss');
-            } else if (Math.abs(delta) <= CFG.perfectWindow) {
+            } else if (Math.abs(delta) <= CFG.perfectWindow + this.dvWindowBonus(s.target)) {
                 this.dvGradeHit(hit, 'perfect');
             } else {
                 this.dvGradeHit(hit, 'good');
